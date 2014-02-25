@@ -21,10 +21,12 @@ package starling.textures
     
     import starling.core.RenderSupport;
     import starling.core.Starling;
+    import starling.core.starling_internal;
     import starling.errors.MissingContextError;
     import starling.events.Event;
     import starling.utils.Color;
-    import starling.utils.getNextPowerOfTwo;
+    
+    use namespace starling_internal;
 
     /** A ConcreteTexture wraps a Stage3D texture object, storing the properties of the texture. */
     public class ConcreteTexture extends Texture
@@ -37,6 +39,7 @@ package starling.textures
         private var mPremultipliedAlpha:Boolean;
         private var mOptimizedForRenderTexture:Boolean;
         private var mScale:Number;
+        private var mRepeat:Boolean;
         private var mOnRestore:Function;
         private var mDataUploaded:Boolean;
         
@@ -48,7 +51,7 @@ package starling.textures
         public function ConcreteTexture(base:TextureBase, format:String, width:int, height:int, 
                                         mipMapping:Boolean, premultipliedAlpha:Boolean,
                                         optimizedForRenderTexture:Boolean=false,
-                                        scale:Number=1)
+                                        scale:Number=1, repeat:Boolean=false)
         {
             mScale = scale <= 0 ? 1.0 : scale;
             mBase = base;
@@ -58,6 +61,7 @@ package starling.textures
             mMipMapping = mipMapping;
             mPremultipliedAlpha = premultipliedAlpha;
             mOptimizedForRenderTexture = optimizedForRenderTexture;
+            mRepeat = repeat;
             mOnRestore = null;
             mDataUploaded = false;
         }
@@ -124,7 +128,7 @@ package starling.textures
                     canvas.dispose();
                 }
             }
-            else // if (nativeTexture is RectangleTexture)
+            else // if (mBase is RectangleTexture)
             {
                 mBase["uploadFromBitmapData"](data);
             }
@@ -134,37 +138,74 @@ package starling.textures
         }
         
         /** Uploads ATF data from a ByteArray to the texture. Note that the size of the
-         *  ATF-encoded data must be exactly the same as the original texture size. */
-        public function uploadAtfData(data:ByteArray, offset:int=0, async:Boolean=false):void
+         *  ATF-encoded data must be exactly the same as the original texture size.
+         *  
+         *  <p>The 'async' parameter may be either a boolean value or a callback function.
+         *  If it's <code>false</code> or <code>null</code>, the texture will be decoded
+         *  synchronously and will be visible right away. If it's <code>true</code> or a function,
+         *  the data will be decoded asynchronously. The texture will remain unchanged until the
+         *  upload is complete, at which time the callback function will be executed. This is the
+         *  expected function definition: <code>function(texture:Texture):void;</code></p>
+         */
+        public function uploadAtfData(data:ByteArray, offset:int=0, async:*=null):void
         {
+            const eventType:String = "textureReady"; // defined here for backwards compatibility
+            
+            var self:ConcreteTexture = this;
+            var isAsync:Boolean = async is Function || async === true;
             var potTexture:flash.display3D.textures.Texture = 
                   mBase as flash.display3D.textures.Texture;
             
-            potTexture.uploadCompressedTextureFromByteArray(data, offset, async);
+            if (potTexture == null)
+                throw new Error("This texture type does not support ATF data");
+            
+            if (async is Function)
+                potTexture.addEventListener(eventType, onTextureReady);
+            
+            potTexture.uploadCompressedTextureFromByteArray(data, offset, isAsync);
             mDataUploaded = true;
+            
+            function onTextureReady(event:Object):void
+            {
+                potTexture.removeEventListener(eventType, onTextureReady);
+                
+                var callback:Function = async as Function;
+                if (callback != null)
+                {
+                    if (callback.length == 1) callback(self);
+                    else callback();
+                }
+            }
         }
         
         // texture backup (context loss)
         
         private function onContextCreated():void
         {
-            var context:Context3D = Starling.context;
-            var isPot:Boolean = mWidth  == getNextPowerOfTwo(mWidth) && 
-                                mHeight == getNextPowerOfTwo(mHeight);
+            // recreate the underlying texture & restore contents
+            createBase();
+            mOnRestore();
             
-            if (isPot)
+            // if no texture has been uploaded above, we init the texture with transparent pixels.
+            if (!mDataUploaded) clear();
+        }
+        
+        /** Recreates the underlying Stage3D texture object with the same dimensions and attributes
+         *  as the one that was passed to the constructor. You have to upload new data before the
+         *  texture becomes usable again. Beware: this method does <strong>not</strong> dispose
+         *  the current base. */
+        starling_internal function createBase():void
+        {
+            var context:Context3D = Starling.context;
+            
+            if (mBase is flash.display3D.textures.Texture)
                 mBase = context.createTexture(mWidth, mHeight, mFormat, 
                                               mOptimizedForRenderTexture);
-            else
+            else // if (mBase is RectangleTexture)
                 mBase = context["createRectangleTexture"](mWidth, mHeight, mFormat,
                                                           mOptimizedForRenderTexture);
             
-            // a chance to upload texture data
             mDataUploaded = false;
-            mOnRestore();
-            
-            // if no texture has been uploaded (yet), we init the texture with transparent pixels.
-            if (!mDataUploaded) clear();
         }
         
         /** Clears the texture with a certain color and alpha value. The previous contents of the
@@ -181,9 +222,15 @@ package starling.textures
                                   Color.getBlue(color)  * alpha);
             
             context.setRenderToTexture(mBase);
-            RenderSupport.clear(color, alpha);
-            context.setRenderToBackBuffer();
             
+            // we wrap the clear call in a try/catch block as a workaround for a problem of
+            // FP 11.8 plugin/projector: calling clear on a compressed texture doesn't work there
+            // (while it *does* work on iOS + Android).
+            
+            try { RenderSupport.clear(color, alpha); }
+            catch (e:Error) {}
+            
+            context.setRenderToBackBuffer();
             mDataUploaded = true;
         }
         
@@ -193,18 +240,20 @@ package starling.textures
         public function get optimizedForRenderTexture():Boolean { return mOptimizedForRenderTexture; }
         
         /** If Starling's "handleLostContext" setting is enabled, the function that you provide
-         *  here will be called after a context loss. On execution, a new base texture will 
-         *  already have been created; however, it will be empty. Call one of the "upload..." 
-         *  methods from within the callbacks to restore the actual texture data. */ 
+         *  here will be called after a context loss. On execution, a new base texture will
+         *  already have been created; however, it will be empty. Call one of the "upload..."
+         *  methods from within the callbacks to restore the actual texture data. */
         public function get onRestore():Function { return mOnRestore; }
         public function set onRestore(value:Function):void
-        { 
-            if (Starling.handleLostContext && mOnRestore == null && value != null)
-                Starling.current.addEventListener(Event.CONTEXT3D_CREATE, onContextCreated);
-            else if (value == null)
-                Starling.current.removeEventListener(Event.CONTEXT3D_CREATE, onContextCreated);
+        {
+            Starling.current.removeEventListener(Event.CONTEXT3D_CREATE, onContextCreated);
             
-            mOnRestore = value; 
+            if (Starling.handleLostContext && value != null)
+            {
+                mOnRestore = value;
+                Starling.current.addEventListener(Event.CONTEXT3D_CREATE, onContextCreated);
+            }
+            else mOnRestore = null;
         }
         
         /** @inheritDoc */
@@ -236,5 +285,8 @@ package starling.textures
         
         /** @inheritDoc */
         public override function get premultipliedAlpha():Boolean { return mPremultipliedAlpha; }
+        
+        /** @inheritDoc */
+        public override function get repeat():Boolean { return mRepeat; }
     }
 }

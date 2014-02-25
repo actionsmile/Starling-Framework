@@ -8,7 +8,9 @@ starling/doc/html/
 */.project
 .flexProperties
 .FlexUnitSettings
+
 .metadata
+.idea/
 
 # OS X folders
 .DS_Store

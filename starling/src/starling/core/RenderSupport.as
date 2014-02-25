@@ -14,6 +14,7 @@ package starling.core
     
     import flash.display3D.Context3D;
     import flash.display3D.Context3DProgramType;
+    import flash.display3D.Context3DTextureFormat;
     import flash.display3D.Program3D;
     import flash.geom.Matrix;
     import flash.geom.Matrix3D;
@@ -26,6 +27,7 @@ package starling.core
     import starling.display.QuadBatch;
     import starling.errors.MissingContextError;
     import starling.textures.Texture;
+    import starling.textures.TextureSmoothing;
     import starling.utils.Color;
     import starling.utils.MatrixUtil;
     import starling.utils.RectangleUtil;
@@ -59,7 +61,9 @@ package starling.core
         
         /** helper objects */
         private static var sPoint:Point = new Point();
-        private static var sRectangle:Rectangle = new Rectangle();
+        private static var sClipRect:Rectangle = new Rectangle();
+        private static var sBufferRect:Rectangle = new Rectangle();
+        private static var sScissorRect:Rectangle = new Rectangle();
         private static var sAssembler:AGALMiniAssembler = new AGALMiniAssembler();
         
         // construction
@@ -277,7 +281,6 @@ package starling.core
             {
                 var width:int, height:int;
                 var rect:Rectangle = mClipRectStack[mClipRectStackSize-1];
-                sRectangle.setTo(rect.x, rect.y, rect.width, rect.height);
                 
                 if (mRenderTarget)
                 {
@@ -290,21 +293,23 @@ package starling.core
                     height = Starling.current.backBufferHeight;
                 }
                 
-                // convert to pixel coordinates
+                // convert to pixel coordinates (matrix transformation ends up in range [-1, 1])
                 MatrixUtil.transformCoords(mProjectionMatrix, rect.x, rect.y, sPoint);
-                sRectangle.x = Math.max(0, ( sPoint.x + 1) / 2) * width;
-                sRectangle.y = Math.max(0, (-sPoint.y + 1) / 2) * height;
+                sClipRect.x = (sPoint.x * 0.5 + 0.5) * width;
+                sClipRect.y = (0.5 - sPoint.y * 0.5) * height;
                 
                 MatrixUtil.transformCoords(mProjectionMatrix, rect.right, rect.bottom, sPoint);
-                sRectangle.right  = Math.min(1, ( sPoint.x + 1) / 2) * width;
-                sRectangle.bottom = Math.min(1, (-sPoint.y + 1) / 2) * height;
+                sClipRect.right  = (sPoint.x * 0.5 + 0.5) * width;
+                sClipRect.bottom = (0.5 - sPoint.y * 0.5) * height;
+                
+                sBufferRect.setTo(0, 0, width, height);
+                RectangleUtil.intersect(sClipRect, sBufferRect, sScissorRect);
                 
                 // an empty rectangle is not allowed, so we set it to the smallest possible size
-                // if the bounds are outside the visible area.
-                if (sRectangle.width < 1 || sRectangle.height < 1)
-                    sRectangle.setTo(0, 0, 1, 1);
+                if (sScissorRect.width < 1 || sScissorRect.height < 1)
+                    sScissorRect.setTo(0, 0, 1, 1);
                 
-                context.setScissorRectangle(sRectangle);
+                context.setScissorRectangle(sScissorRect);
             }
             else
             {
@@ -440,6 +445,29 @@ package starling.core
                 sAssembler.assemble(Context3DProgramType.FRAGMENT, fragmentShader));
             
             return resultProgram;
+        }
+        
+        /** Returns the flags that are required for AGAL texture lookup, 
+         *  including the '&lt;' and '&gt;' delimiters. */
+        public static function getTextureLookupFlags(format:String, mipMapping:Boolean,
+                                                     repeat:Boolean=false,
+                                                     smoothing:String="bilinear"):String
+        {
+            var options:Array = ["2d", repeat ? "repeat" : "clamp"];
+            
+            if (format == Context3DTextureFormat.COMPRESSED)
+                options.push("dxt1");
+            else if (format == "compressedAlpha")
+                options.push("dxt5");
+            
+            if (smoothing == TextureSmoothing.NONE)
+                options.push("nearest", mipMapping ? "mipnearest" : "mipnone");
+            else if (smoothing == TextureSmoothing.BILINEAR)
+                options.push("linear", mipMapping ? "mipnearest" : "mipnone");
+            else
+                options.push("linear", mipMapping ? "miplinear" : "mipnone");
+            
+            return "<" + options.join() + ">";
         }
         
         // statistics

@@ -32,16 +32,27 @@ package starling.display
     
     /** Dispatched when an object is added to a parent. */
     [Event(name="added", type="starling.events.Event")]
+    
     /** Dispatched when an object is connected to the stage (directly or indirectly). */
     [Event(name="addedToStage", type="starling.events.Event")]
+    
     /** Dispatched when an object is removed from its parent. */
     [Event(name="removed", type="starling.events.Event")]
+    
     /** Dispatched when an object is removed from the stage and won't be rendered any longer. */ 
     [Event(name="removedFromStage", type="starling.events.Event")]
+    
     /** Dispatched once every frame on every object that is connected to the stage. */ 
     [Event(name="enterFrame", type="starling.events.EnterFrameEvent")]
+    
     /** Dispatched when an object is touched. Bubbles. */
     [Event(name="touch", type="starling.events.TouchEvent")]
+    
+    /** Dispatched when a key on the keyboard is released. */
+    [Event(name="keyUp", type="starling.events.KeyboardEvent")]
+    
+    /** Dispatched when a key on the keyboard is pressed. */
+    [Event(name="keyDown", type="starling.events.KeyboardEvent")]
     
     /**
      *  The DisplayObject class is the base class for all objects that are rendered on the 
@@ -113,6 +124,8 @@ package starling.display
      */
     public class DisplayObject extends EventDispatcher
     {
+        private static const TWO_PI:Number = Math.PI * 2.0;
+        
         // members
         
         private var mX:Number;
@@ -222,7 +235,7 @@ package starling.display
             
             while (currentObject)
             {
-                sAncestors.push(currentObject);
+                sAncestors[sAncestors.length] = currentObject; // avoiding 'push'
                 currentObject = currentObject.mParent;
             }
             
@@ -366,10 +379,24 @@ package starling.display
         
         private final function normalizeAngle(angle:Number):Number
         {
-            // move into range [-180 deg, +180 deg]
-            while (angle < -Math.PI) angle += Math.PI * 2.0;
-            while (angle >  Math.PI) angle -= Math.PI * 2.0;
+            // move to equivalent value in range [0 deg, 360 deg] without a loop
+            angle = angle % TWO_PI;
+
+            // move to [-180 deg, +180 deg]
+            if (angle < -Math.PI) angle += TWO_PI;
+            if (angle >  Math.PI) angle -= TWO_PI;
+
             return angle;
+        }
+        
+        // stage event handling
+        
+        public override function dispatchEvent(event:Event):void
+        {
+            if (event.type == Event.REMOVED_FROM_STAGE && stage == null)
+                return; // special check to avoid double-dispatch of RfS-event.
+            else
+                super.dispatchEvent(event);
         }
         
         // enter frame event optimization
@@ -496,23 +523,12 @@ package starling.display
             
             mX = matrix.tx;
             mY = matrix.ty;
-            mScaleX = Math.sqrt(matrix.a * matrix.a + matrix.b * matrix.b);
-            mSkewY  = Math.acos(matrix.a / mScaleX);
             
-            if (!isEquivalent(matrix.b, mScaleX * Math.sin(mSkewY)))
-            {
-                mScaleX *= -1;
-                mSkewY = Math.acos(matrix.a / mScaleX);
-            }
+            mSkewX = Math.atan(-matrix.c / matrix.d);
+            mSkewY = Math.atan( matrix.b / matrix.a);
             
-            mScaleY = Math.sqrt(matrix.c * matrix.c + matrix.d * matrix.d);
-            mSkewX  = Math.acos(matrix.d / mScaleY);
-            
-            if (!isEquivalent(matrix.c, -mScaleY * Math.sin(mSkewX)))
-            {
-                mScaleY *= -1;
-                mSkewX = Math.acos(matrix.d / mScaleY);
-            }
+            mScaleX = matrix.a / Math.cos(mSkewY);
+            mScaleY = matrix.d / Math.cos(mSkewX);
             
             if (isEquivalent(mSkewX, mSkewY))
             {
@@ -703,10 +719,12 @@ package starling.display
         public function get name():String { return mName; }
         public function set name(value:String):void { mName = value; }
         
-        /** The filter that is attached to the display object. The starling.filters 
+        /** The filter that is attached to the display object. The starling.filters
          *  package contains several classes that define specific filters you can use. 
          *  Beware that you should NOT use the same filter on more than one object (for 
-         *  performance reasons). */ 
+         *  performance reasons). Furthermore, when you set this property to 'null' or
+         *  assign a different filter, the previous filter is NOT disposed automatically
+         *  (since you might want to reuse it). */
         public function get filter():FragmentFilter { return mFilter; }
         public function set filter(value:FragmentFilter):void { mFilter = value; }
         
