@@ -1,7 +1,7 @@
 // =================================================================================================
 //
 //	Starling Framework
-//	Copyright 2012 Gamua OG. All Rights Reserved.
+//	Copyright 2011-2014 Gamua. All Rights Reserved.
 //
 //	This program is free software. You can redistribute and/or modify it
 //	in accordance with the terms of the accompanying license agreement.
@@ -16,6 +16,7 @@ package starling.core
     import flash.display.StageScaleMode;
     import flash.display3D.Context3D;
     import flash.display3D.Context3DCompareMode;
+    import flash.display3D.Context3DRenderMode;
     import flash.display3D.Context3DTriangleFace;
     import flash.display3D.Program3D;
     import flash.errors.IllegalOperationError;
@@ -382,8 +383,18 @@ package starling.core
             
             function onCreated(event:Event):void
             {
-                mProfile = currentProfile;
-                onFinished();
+                var context:Context3D = stage3D.context3D;
+
+                if (renderMode == Context3DRenderMode.AUTO && profiles.length != 0 &&
+                    context.driverInfo.indexOf("Software") != -1)
+                {
+                    onError(event);
+                }
+                else
+                {
+                    mProfile = currentProfile;
+                    onFinished();
+                }
             }
             
             function onError(event:Event):void
