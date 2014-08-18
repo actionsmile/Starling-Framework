@@ -14,6 +14,7 @@ package starling.events
     
     import starling.core.starling_internal;
     import starling.display.DisplayObject;
+    import starling.events.IEventDispatcher
     
     use namespace starling_internal;
     
@@ -35,7 +36,7 @@ package starling.events
      *  @see Event
      *  @see starling.display.DisplayObject DisplayObject
      */
-    public class EventDispatcher
+    public class EventDispatcher implements IEventDispatcher
     {
         private var mEventListeners:Dictionary;
         
