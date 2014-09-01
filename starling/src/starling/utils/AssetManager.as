@@ -133,6 +133,8 @@ package starling.utils
             
             for each (var byteArray:ByteArray in mByteArrays)
                 byteArray.clear();
+
+            this._logger = null;
         }
         
         // retrieving
@@ -1037,7 +1039,23 @@ package starling.utils
          *  default, it traces 'message' to the console. */
         protected function log(message:String):void
         {
-            if (mVerbose) trace("[AssetManager]", message);
+            if (mVerbose) {
+                this.logger ? this.logger["debug"](message) : trace("[AssetManager]", message);
+            }
+        }
+
+        /**
+         * @author Aziz Zaynutdinov
+         * sets custom log system
+         */
+        private var _logger : Object;
+
+        public function set logger(value : Object) : void {
+            if(this._logger != value) this._logger = value;
+        }
+
+        public function get logger() : Object {
+            return this._logger;
         }
         
         private function byteArrayStartsWith(bytes:ByteArray, char:String):Boolean
