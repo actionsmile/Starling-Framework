@@ -12,28 +12,38 @@
 bin-debug/
 bin-release/
 starling/doc/html/
+tests/libs/
+out/
 
 # Project property files
 */.settings/*
 */.project
+
+# Eclipse / Flash Builder
 .flexProperties
 .FlexUnitSettings
+.actionScriptProperties
 
 
 .metadata
 
 # IntelliJ IDEA
-.idea/
-*.iml
-*.ipr
 *.iws
+**/.idea/workspace.xml
+**/.idea/tasks.xml
+**/.idea/dictionaries
 
 # Gradle CI
 .gradle/
 build/
+!starling/build/
 
 # Maven CI
 target/
 
 # OS X folders
 .DS_Store
+
+# FlashBuilder auto generated test runners
+FlexUnitApplication.as
+FlexUnitCompilerApplication.as
