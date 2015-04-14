@@ -24,7 +24,7 @@ package starling.core
     import flash.geom.Point;
     import flash.geom.Rectangle;
     import flash.geom.Vector3D;
-    
+
     import starling.display.BlendMode;
     import starling.display.DisplayObject;
     import starling.display.Quad;
@@ -36,6 +36,7 @@ package starling.core
     import starling.utils.Color;
     import starling.utils.MatrixUtil;
     import starling.utils.RectangleUtil;
+    import starling.utils.SystemUtil;
 
     /** A class that contains helper methods simplifying Stage3D rendering.
      *
@@ -105,7 +106,7 @@ package starling.core
             mClipRectStack = new <Rectangle>[];
             
             mCurrentQuadBatchID = 0;
-            mQuadBatches = new <QuadBatch>[new QuadBatch()];
+            mQuadBatches = new <QuadBatch>[createQuadBatch()];
 
             loadIdentity();
             setProjectionMatrix(0, 0, 400, 300);
@@ -365,9 +366,12 @@ package starling.core
         {
             mRenderTarget = target;
             applyClipRect();
-            
-            if (target) Starling.context.setRenderToTexture(target.base, false, antiAliasing);
-            else        Starling.context.setRenderToBackBuffer();
+
+            if (target)
+                Starling.context.setRenderToTexture(target.base,
+                        SystemUtil.supportsDepthAndStencil, antiAliasing);
+            else
+                Starling.context.setRenderToBackBuffer();
         }
         
         // clipping
@@ -473,12 +477,7 @@ package starling.core
             context.setStencilActions(Context3DTriangleFace.FRONT_AND_BACK,
                     Context3DCompareMode.EQUAL, Context3DStencilAction.INCREMENT_SATURATE);
 
-            pushMatrix();
-            transformMatrix(mask);
-            mask.render(this, 0.0);
-            popMatrix();
-
-            finishQuadBatch();
+            drawMask(mask);
 
             context.setStencilReferenceValue(mMasks.length);
             context.setStencilActions(Context3DTriangleFace.FRONT_AND_BACK,
@@ -497,16 +496,25 @@ package starling.core
             context.setStencilActions(Context3DTriangleFace.FRONT_AND_BACK,
                     Context3DCompareMode.EQUAL, Context3DStencilAction.DECREMENT_SATURATE);
 
-            pushMatrix();
-            transformMatrix(mask);
-            mask.render(this, 0.0);
-            popMatrix();
-
-            finishQuadBatch();
+            drawMask(mask);
 
             context.setStencilReferenceValue(mMasks.length);
             context.setStencilActions(Context3DTriangleFace.FRONT_AND_BACK,
                     Context3DCompareMode.EQUAL, Context3DStencilAction.KEEP);
+        }
+
+        private function drawMask(mask:DisplayObject):void
+        {
+            pushMatrix();
+
+            var stage:Stage = mask.stage;
+            if (stage) mask.getTransformationMatrix(stage, mModelViewMatrix);
+            else       transformMatrix(mask);
+
+            mask.render(this, 0.0);
+            finishQuadBatch();
+
+            popMatrix();
         }
 
         // optimized quad rendering
@@ -568,7 +576,7 @@ package starling.core
                 ++mDrawCount;
                 
                 if (mQuadBatches.length <= mCurrentQuadBatchID)
-                    mQuadBatches.push(new QuadBatch());
+                    mQuadBatches.push(createQuadBatch());
             }
         }
         
@@ -597,6 +605,15 @@ package starling.core
                 for (var i:int=0; i<numToRemove; ++i)
                     mQuadBatches.pop().dispose();
             }
+        }
+
+        private function createQuadBatch():QuadBatch
+        {
+            var profile:String = Starling.current.profile;
+            var forceTinted:Boolean = (profile != "baselineConstrained" && profile != "baseline");
+            var quadBatch:QuadBatch = new QuadBatch();
+            quadBatch.forceTinted = forceTinted;
+            return quadBatch;
         }
         
         // other helper methods
