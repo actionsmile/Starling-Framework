@@ -46,6 +46,8 @@ package starling.core
      */
     public class RenderSupport
     {
+        private static const RENDER_TARGET_NAME:String = "Starling.renderTarget";
+
         // members
         
         private var mProjectionMatrix:Matrix;
@@ -64,8 +66,7 @@ package starling.core
 
         private var mDrawCount:int;
         private var mBlendMode:String;
-        private var mRenderTarget:Texture;
-        
+
         private var mClipRectStack:Vector.<Rectangle>;
         private var mClipRectStackSize:int;
         
@@ -101,7 +102,6 @@ package starling.core
             mMatrixStack3DSize = 0;
             
             mDrawCount = 0;
-            mRenderTarget = null;
             mBlendMode = BlendMode.NORMAL;
             mClipRectStack = new <Rectangle>[];
             
@@ -351,7 +351,11 @@ package starling.core
         
         /** The texture that is currently being rendered into, or 'null' to render into the 
          *  back buffer. If you set a new target, it is immediately activated. */
-        public function get renderTarget():Texture { return mRenderTarget; }
+        public function get renderTarget():Texture
+        {
+            return Starling.current.contextData[RENDER_TARGET_NAME];
+        }
+
         public function set renderTarget(target:Texture):void 
         {
             setRenderTarget(target);
@@ -364,7 +368,7 @@ package starling.core
          */
         public function setRenderTarget(target:Texture, antiAliasing:int=0):void
         {
-            mRenderTarget = target;
+            Starling.current.contextData[RENDER_TARGET_NAME] = target;
             applyClipRect();
 
             if (target)
@@ -379,9 +383,9 @@ package starling.core
         /** The clipping rectangle can be used to limit rendering in the current render target to
          *  a certain area. This method expects the rectangle in stage coordinates. Internally,
          *  it uses the 'scissorRectangle' of stage3D, which works with pixel coordinates. 
-         *  Any pushed rectangle is intersected with the previous rectangle; the method returns
-         *  that intersection. */ 
-        public function pushClipRect(rectangle:Rectangle):Rectangle
+         *  Per default, any pushed rectangle is intersected with the previous rectangle;
+         *  the method returns that intersection. */
+        public function pushClipRect(rectangle:Rectangle, intersectWithCurrent:Boolean=true):Rectangle
         {
             if (mClipRectStack.length < mClipRectStackSize + 1)
                 mClipRectStack.push(new Rectangle());
@@ -390,7 +394,7 @@ package starling.core
             rectangle = mClipRectStack[mClipRectStackSize];
             
             // intersect with the last pushed clip rect
-            if (mClipRectStackSize > 0)
+            if (intersectWithCurrent && mClipRectStackSize > 0)
                 RectangleUtil.intersect(rectangle, mClipRectStack[mClipRectStackSize-1], 
                                         rectangle);
             
@@ -410,7 +414,7 @@ package starling.core
                 applyClipRect();
             }
         }
-        
+
         /** Updates the context3D scissor rectangle using the current clipping rectangle. This
          *  method is called automatically when either the render target, the projection matrix,
          *  or the clipping rectangle changes. */
@@ -425,11 +429,12 @@ package starling.core
             {
                 var width:int, height:int;
                 var rect:Rectangle = mClipRectStack[mClipRectStackSize-1];
+                var renderTarget:Texture = this.renderTarget;
                 
-                if (mRenderTarget)
+                if (renderTarget)
                 {
-                    width  = mRenderTarget.root.nativeWidth;
-                    height = mRenderTarget.root.nativeHeight;
+                    width  = renderTarget.root.nativeWidth;
+                    height = renderTarget.root.nativeHeight;
                 }
                 else
                 {
@@ -570,7 +575,8 @@ package starling.core
         public function batchQuadBatch(quadBatch:QuadBatch, parentAlpha:Number):void
         {
             if (mQuadBatches[mCurrentQuadBatchID].isStateChange(
-                quadBatch.tinted, parentAlpha, quadBatch.texture, quadBatch.smoothing, mBlendMode))
+                    quadBatch.tinted, parentAlpha, quadBatch.texture, quadBatch.smoothing,
+                    mBlendMode, quadBatch.numQuads))
             {
                 finishQuadBatch();
             }
