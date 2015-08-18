@@ -1000,18 +1000,18 @@ package starling.core
             }
             else
             {
+                var stageWidth:int  = mStage.stageWidth;
+                var stageHeight:int = mStage.stageHeight;
+
                 if (mStatsDisplay == null)
                 {
                     mStatsDisplay = new StatsDisplay();
                     mStatsDisplay.touchable = false;
-                    mStage.addChild(mStatsDisplay);
                 }
-                
-                var stageWidth:int  = mStage.stageWidth;
-                var stageHeight:int = mStage.stageHeight;
-                
+
+                mStage.addChild(mStatsDisplay);
                 mStatsDisplay.scaleX = mStatsDisplay.scaleY = scale;
-                
+
                 if (hAlign == HAlign.LEFT) mStatsDisplay.x = 0;
                 else if (hAlign == HAlign.RIGHT) mStatsDisplay.x = stageWidth - mStatsDisplay.width; 
                 else mStatsDisplay.x = int((stageWidth - mStatsDisplay.width) / 2);
@@ -1165,7 +1165,7 @@ package starling.core
          *  roll). It's recommended to always enable this property, while using the AssetManager
          *  for texture loading.</p>
          *  
-         *  @default false
+         *  @default true
          *  @see starling.utils.AssetManager
          */
         public static function get handleLostContext():Boolean { return sHandleLostContext; }
