@@ -145,13 +145,13 @@ package starling.display
             }
         }
         
-        /** Removes a child from the container. If the object is not a child, nothing happens. 
-         *  If requested, the child will be disposed right away. */
+        /** Removes a child from the container. If the object is not a child, the method returns
+         *  <code>null</code>. If requested, the child will be disposed right away. */
         public function removeChild(child:DisplayObject, dispose:Boolean=false):DisplayObject
         {
             var childIndex:int = getChildIndex(child);
-            if (childIndex != -1) removeChildAt(childIndex, dispose);
-            return child;
+            if (childIndex != -1) return removeChildAt(childIndex, dispose);
+            else return null;
         }
         
         /** Removes a child at a certain index. The index positions of any display objects above
@@ -351,6 +351,7 @@ package starling.display
         {
             var numChildren:int = _children.length;
             var frameID:uint = painter.frameID;
+            var cacheEnabled:Boolean = frameID !=0;
             var selfOrParentChanged:Boolean = _lastParentOrSelfChangeFrameID == frameID;
 
             for (var i:int=0; i<numChildren; ++i)
@@ -364,7 +365,7 @@ package starling.display
 
                     if (child._lastParentOrSelfChangeFrameID != frameID &&
                         child._lastChildChangeFrameID != frameID &&
-                        child._tokenFrameID == frameID - 1)
+                        child._tokenFrameID == frameID - 1 && cacheEnabled)
                     {
                         painter.pushState(sCacheToken);
                         painter.drawFromCache(child._pushToken, child._popToken);
@@ -374,23 +375,26 @@ package starling.display
                     }
                     else
                     {
-                        var mask:DisplayObject = child._mask;
+                        var pushToken:BatchToken  = cacheEnabled ? child._pushToken : null;
+                        var popToken:BatchToken   = cacheEnabled ? child._popToken  : null;
                         var filter:FragmentFilter = child._filter;
+                        var mask:DisplayObject    = child._mask;
 
-                        painter.pushState(child._pushToken);
+                        painter.pushState(pushToken);
                         painter.setStateTo(child.transformationMatrix, child.alpha, child.blendMode);
 
-                        if (mask) painter.drawMask(mask);
+                        if (mask) painter.drawMask(mask, child);
 
                         if (filter) filter.render(painter);
                         else        child.render(painter);
 
-                        if (mask) painter.eraseMask(mask);
+                        if (mask) painter.eraseMask(mask, child);
 
-                        painter.popState(child._popToken);
+                        painter.popState(popToken);
                     }
 
-                    child._tokenFrameID = frameID;
+                    if (cacheEnabled)
+                        child._tokenFrameID = frameID;
                 }
             }
         }

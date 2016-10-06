@@ -14,7 +14,6 @@ package starling.rendering
 
     import starling.display.Mesh;
     import starling.display.MeshBatch;
-    import starling.utils.MathUtil;
     import starling.utils.MeshSubset;
 
     /** This class manages a list of mesh batches of different types;
@@ -49,6 +48,7 @@ package starling.rendering
             _batches.length = 0;
             _batchPool.purge();
             _currentBatch = null;
+            _onBatchComplete = null;
         }
 
         /** Adds a mesh to the current batch, or to a new one if the current one does not support
@@ -93,8 +93,8 @@ package starling.rendering
                     _batches[_batches.length] = _currentBatch;
                 }
 
-                var matrix:Matrix = state ? state.modelviewMatrix : null;
-                var alpha:Number  = state ? state.alpha : 1.0;
+                var matrix:Matrix = state ? state._modelviewMatrix : null;
+                var alpha:Number  = state ? state._alpha : 1.0;
 
                 _currentBatch.addMesh(mesh, matrix, alpha, subset, ignoreTransformations);
                 _cacheToken.vertexID += subset.numVertices;
@@ -142,25 +142,6 @@ package starling.rendering
         public function trim():void
         {
             _batchPool.purge();
-        }
-
-        public function rewindTo(token:BatchToken):void
-        {
-            if (token.batchID > _cacheToken.batchID)
-                throw new RangeError("Token outside available range");
-
-            for (var i:int = _cacheToken.batchID; i > token.batchID; --i)
-                _batchPool.put(_batches.pop());
-
-            if (_batches.length > token.batchID)
-            {
-                var batch:MeshBatch = _batches[token.batchID];
-                batch.numIndices  = MathUtil.min(batch.numIndices,  token.indexID);
-                batch.numVertices = MathUtil.min(batch.numVertices, token.vertexID);
-            }
-
-            _currentBatch = null;
-            _cacheToken.copyFrom(token);
         }
 
         /** Sets all properties of the given token so that it describes the current position
@@ -218,12 +199,7 @@ class BatchPool
         }
 
         if (batchList.length > 0) return batchList.pop();
-        else
-        {
-            var batch:MeshBatch = new MeshBatch();
-            batch.batchable = false;
-            return batch;
-        }
+        else return new MeshBatch();
     }
 
     public function put(meshBatch:MeshBatch):void
