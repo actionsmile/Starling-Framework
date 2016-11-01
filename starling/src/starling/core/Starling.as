@@ -307,10 +307,6 @@ package starling.core
             }
             else
             {
-                if (!SystemUtil.supportsDepthAndStencil)
-                    trace("[Starling] Mask support requires 'depthAndStencil' to be enabled" +
-                          " in the application descriptor.");
-
                 _painter.requestContext3D(renderMode, profile);
             }
         }
@@ -467,6 +463,9 @@ package starling.core
 
                 _clippedViewPort = _viewPort.intersection(
                     new Rectangle(0, 0, _nativeStage.stageWidth, _nativeStage.stageHeight));
+
+                if (_clippedViewPort.width  < 32) _clippedViewPort.width  = 32;
+                if (_clippedViewPort.height < 32) _clippedViewPort.height = 32;
 
                 var contentScaleFactor:Number =
                         _supportHighResolutions ? _nativeStage.contentsScaleFactor : 1.0;

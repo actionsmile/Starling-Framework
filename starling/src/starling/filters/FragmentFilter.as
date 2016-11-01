@@ -103,6 +103,7 @@ package starling.filters
         private var _padding:Padding;
         private var _helper:FilterHelper;
         private var _resolution:Number;
+        private var _antiAliasing:int;
         private var _textureFormat:String;
         private var _textureSmoothing:String;
         private var _alwaysDrawToBackBuffer:Boolean;
@@ -227,6 +228,7 @@ package starling.filters
             _helper.textureScale = Starling.contentScaleFactor * _resolution;
             _helper.projectionMatrix3D = painter.state.projectionMatrix3D;
             _helper.renderTarget = painter.state.renderTarget;
+            _helper.clipRect = painter.state.clipRect;
             _helper.targetBounds = bounds;
             _helper.target = _target;
             _helper.start(numPasses, drawLastPassToBackBuffer);
@@ -242,7 +244,8 @@ package starling.filters
             painter.cacheEnabled = false; // -> what follows should not be cached
             painter.pushState();
             painter.state.alpha = 1.0;
-            painter.state.renderTarget = input;
+            painter.state.clipRect = null;
+            painter.state.setRenderTarget(input, true, _antiAliasing);
             painter.state.setProjectionMatrix(bounds.x, bounds.y,
                 input.root.width, input.root.height,
                 stage.stageWidth, stage.stageHeight, stage.cameraPosition);
@@ -251,7 +254,6 @@ package starling.filters
 
             painter.finishMeshBatch();
             painter.state.setModelviewMatricesToIdentity();
-            painter.state.clipRect = null;
 
             output = process(painter, _helper, input); // -> feed 'input' to actual filter code
 
@@ -318,6 +320,10 @@ package starling.filters
                 renderTarget = (helper as FilterHelper).renderTarget;
                 projectionMatrix = (helper as FilterHelper).projectionMatrix3D;
                 effect.textureSmoothing = _textureSmoothing;
+
+                // restore clipRect (projection matrix influences clipRect!)
+                painter.state.clipRect = (helper as FilterHelper).clipRect;
+                painter.state.projectionMatrix3D.copyFrom(projectionMatrix);
             }
 
             painter.state.renderTarget = renderTarget;
@@ -480,6 +486,18 @@ package starling.filters
             {
                 if (value > 0) _resolution = value;
                 else throw new ArgumentError("resolution must be > 0");
+                setRequiresRedraw();
+            }
+        }
+
+        /** The anti-aliasing level. This is only used for rendering the target object
+         *  into a texture, not for the filter passes. 0 - none, 4 - maximum. @default 0 */
+        public function get antiAliasing():int { return _antiAliasing; }
+        public function set antiAliasing(value:int):void
+        {
+            if (value != _antiAliasing)
+            {
+                _antiAliasing = value;
                 setRequiresRedraw();
             }
         }
