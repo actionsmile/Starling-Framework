@@ -138,7 +138,7 @@ package starling.display
         private var _useHandCursor:Boolean;
         private var _transformationMatrix:Matrix;
         private var _transformationMatrix3D:Matrix3D;
-        private var _orientationChanged:Boolean;
+        private var _transformationChanged:Boolean;
         private var _is3D:Boolean;
         private var _maskee:DisplayObject;
 
@@ -374,16 +374,15 @@ package starling.display
                                    verticalAlign:String="center"):void
         {
             var bounds:Rectangle = getBounds(this, sHelperRect);
-            setOrientationChanged();
-            
-            if (horizontalAlign == Align.LEFT)        _pivotX = bounds.x;
-            else if (horizontalAlign == Align.CENTER) _pivotX = bounds.x + bounds.width / 2.0;
-            else if (horizontalAlign == Align.RIGHT)  _pivotX = bounds.x + bounds.width;
+
+            if (horizontalAlign == Align.LEFT)        pivotX = bounds.x;
+            else if (horizontalAlign == Align.CENTER) pivotX = bounds.x + bounds.width / 2.0;
+            else if (horizontalAlign == Align.RIGHT)  pivotX = bounds.x + bounds.width;
             else throw new ArgumentError("Invalid horizontal alignment: " + horizontalAlign);
             
-            if (verticalAlign == Align.TOP)         _pivotY = bounds.y;
-            else if (verticalAlign == Align.CENTER) _pivotY = bounds.y + bounds.height / 2.0;
-            else if (verticalAlign == Align.BOTTOM) _pivotY = bounds.y + bounds.height;
+            if (verticalAlign == Align.TOP)           pivotY = bounds.y;
+            else if (verticalAlign == Align.CENTER)   pivotY = bounds.y + bounds.height / 2.0;
+            else if (verticalAlign == Align.BOTTOM)   pivotY = bounds.y + bounds.height;
             else throw new ArgumentError("Invalid vertical alignment: " + verticalAlign);
         }
 
@@ -567,7 +566,7 @@ package starling.display
             else
                 _parent = value;
         }
-        
+
         /** @private */
         internal function setIs3D(value:Boolean):void
         {
@@ -637,12 +636,60 @@ package starling.display
 
         // helpers
 
-        private function setOrientationChanged():void
+        /** @private */
+        starling_internal function setTransformationChanged():void
         {
-            _orientationChanged = true;
+            _transformationChanged = true;
             setRequiresRedraw();
         }
-        
+
+        /** @private */
+        starling_internal function updateTransformationMatrices(
+            x:Number, y:Number, pivotX:Number, pivotY:Number, scaleX:Number, scaleY:Number,
+            skewX:Number, skewY:Number, rotation:Number, out:Matrix, out3D:Matrix3D):void
+        {
+            if (skewX == 0.0 && skewY == 0.0)
+            {
+                // optimization: no skewing / rotation simplifies the matrix math
+
+                if (rotation == 0.0)
+                {
+                    out.setTo(scaleX, 0.0, 0.0, scaleY,
+                        x - pivotX * scaleX, y - pivotY * scaleY);
+                }
+                else
+                {
+                    var cos:Number = Math.cos(rotation);
+                    var sin:Number = Math.sin(rotation);
+                    var a:Number   = scaleX *  cos;
+                    var b:Number   = scaleX *  sin;
+                    var c:Number   = scaleY * -sin;
+                    var d:Number   = scaleY *  cos;
+                    var tx:Number  = x - pivotX * a - pivotY * c;
+                    var ty:Number  = y - pivotX * b - pivotY * d;
+
+                    out.setTo(a, b, c, d, tx, ty);
+                }
+            }
+            else
+            {
+                out.identity();
+                out.scale(scaleX, scaleY);
+                MatrixUtil.skew(out, skewX, skewY);
+                out.rotate(rotation);
+                out.translate(x, y);
+
+                if (pivotX != 0.0 || pivotY != 0.0)
+                {
+                    // prepend pivot transformation
+                    out.tx = x - out.a * pivotX - out.c * pivotY;
+                    out.ty = y - out.b * pivotX - out.d * pivotY;
+                }
+            }
+
+            if (out3D) MatrixUtil.convertTo3D(out, out3D);
+        }
+
         private static function findCommonParent(object1:DisplayObject,
                                                  object2:DisplayObject):DisplayObject
         {
@@ -745,50 +792,16 @@ package starling.display
          *  <p>CAUTION: not a copy, but the actual object!</p> */
         public function get transformationMatrix():Matrix
         {
-            if (_orientationChanged)
+            if (_transformationChanged)
             {
-                _orientationChanged = false;
-                
-                if (_skewX == 0.0 && _skewY == 0.0)
-                {
-                    // optimization: no skewing / rotation simplifies the matrix math
-                    
-                    if (_rotation == 0.0)
-                    {
-                        _transformationMatrix.setTo(_scaleX, 0.0, 0.0, _scaleY,
-                            _x - _pivotX * _scaleX, _y - _pivotY * _scaleY);
-                    }
-                    else
-                    {
-                        var cos:Number = Math.cos(_rotation);
-                        var sin:Number = Math.sin(_rotation);
-                        var a:Number   = _scaleX *  cos;
-                        var b:Number   = _scaleX *  sin;
-                        var c:Number   = _scaleY * -sin;
-                        var d:Number   = _scaleY *  cos;
-                        var tx:Number  = _x - _pivotX * a - _pivotY * c;
-                        var ty:Number  = _y - _pivotX * b - _pivotY * d;
-                        
-                        _transformationMatrix.setTo(a, b, c, d, tx, ty);
-                    }
-                }
-                else
-                {
-                    _transformationMatrix.identity();
-                    _transformationMatrix.scale(_scaleX, _scaleY);
-                    MatrixUtil.skew(_transformationMatrix, _skewX, _skewY);
-                    _transformationMatrix.rotate(_rotation);
-                    _transformationMatrix.translate(_x, _y);
-                    
-                    if (_pivotX != 0.0 || _pivotY != 0.0)
-                    {
-                        // prepend pivot transformation
-                        _transformationMatrix.tx = _x - _transformationMatrix.a * _pivotX
-                                                      - _transformationMatrix.c * _pivotY;
-                        _transformationMatrix.ty = _y - _transformationMatrix.b * _pivotX
-                                                      - _transformationMatrix.d * _pivotY;
-                    }
-                }
+                _transformationChanged = false;
+
+                if (_transformationMatrix3D == null && _is3D)
+                    _transformationMatrix3D = new Matrix3D();
+
+                updateTransformationMatrices(
+                    _x, _y, _pivotX, _pivotY, _scaleX, _scaleY, _skewX, _skewY, _rotation,
+                    _transformationMatrix, _transformationMatrix3D);
             }
             
             return _transformationMatrix;
@@ -799,7 +812,7 @@ package starling.display
             const PI_Q:Number = Math.PI / 4.0;
 
             setRequiresRedraw();
-            _orientationChanged = false;
+            _transformationChanged = false;
             _transformationMatrix.copyFrom(matrix);
             _pivotX = _pivotY = 0;
             
@@ -837,12 +850,18 @@ package starling.display
          *  <p>CAUTION: not a copy, but the actual object!</p> */
         public function get transformationMatrix3D():Matrix3D
         {
-            // this method needs to be overridden in 3D-supporting subclasses (like Sprite3D).
-
             if (_transformationMatrix3D == null)
-                _transformationMatrix3D = new Matrix3D();
+                _transformationMatrix3D = MatrixUtil.convertTo3D(_transformationMatrix);
 
-            return MatrixUtil.convertTo3D(transformationMatrix, _transformationMatrix3D);
+            if (_transformationChanged)
+            {
+                _transformationChanged = false;
+                updateTransformationMatrices(
+                    _x, _y, _pivotX, _pivotY, _scaleX, _scaleY, _skewX, _skewY, _rotation,
+                    _transformationMatrix, _transformationMatrix3D);
+            }
+
+            return _transformationMatrix3D;
         }
 
         /** Indicates if this object or any of its parents is a 'Sprite3D' object. */
@@ -913,7 +932,7 @@ package starling.display
             if (_x != value)
             {
                 _x = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
         
@@ -924,7 +943,7 @@ package starling.display
             if (_y != value)
             {
                 _y = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
         
@@ -935,7 +954,7 @@ package starling.display
             if (_pivotX != value)
             {
                 _pivotX = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
         
@@ -946,7 +965,7 @@ package starling.display
             if (_pivotY != value)
             {
                 _pivotY = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
         
@@ -958,7 +977,7 @@ package starling.display
             if (_scaleX != value)
             {
                 _scaleX = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
         
@@ -970,7 +989,7 @@ package starling.display
             if (_scaleY != value)
             {
                 _scaleY = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
 
@@ -988,7 +1007,7 @@ package starling.display
             if (_skewX != value)
             {
                 _skewX = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
         
@@ -1001,7 +1020,7 @@ package starling.display
             if (_skewY != value)
             {
                 _skewY = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
         
@@ -1015,7 +1034,7 @@ package starling.display
             if (_rotation != value)
             {            
                 _rotation = value;
-                setOrientationChanged();
+                setTransformationChanged();
             }
         }
 
