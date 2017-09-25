@@ -140,7 +140,7 @@ package starling.text
                 _size = (_size == 0.0 ? 16.0 : _size * -1.0);
             }
 
-            if (fontXml.distanceField)
+            if (fontXml.distanceField.length())
             {
                 _distanceFieldSpread = parseFloat(fontXml.distanceField.@distanceRange);
                 _type = fontXml.distanceField.@fieldType == "msdf" ?
@@ -327,7 +327,7 @@ package starling.text
                 containerWidth  = (width  - 2 * _padding) / scale;
                 containerHeight = (height - 2 * _padding) / scale;
                 
-                if (_lineHeight <= containerHeight)
+                if (_size <= containerHeight)
                 {
                     var lastWhiteSpace:int = -1;
                     var lastCharID:int = -1;
@@ -411,7 +411,7 @@ package starling.text
                             if (lastWhiteSpace == i)
                                 currentLine.pop();
                             
-                            if (currentY + leading + 2 * _lineHeight <= containerHeight)
+                            if (currentY + _lineHeight + leading + _size <= containerHeight)
                             {
                                 currentLine = CharLocation.vectorFromPool();
                                 currentX = 0;
