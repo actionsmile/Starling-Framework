@@ -61,12 +61,13 @@ package starling.text
         
         /** The font name of the embedded minimal bitmap font. Use this e.g. for debug output. */
         public static const MINI:String = "mini";
-        
-        private static const CHAR_SPACE:int           = 32;
+
+        private static const CHAR_MISSING:int         =  0;
         private static const CHAR_TAB:int             =  9;
         private static const CHAR_NEWLINE:int         = 10;
         private static const CHAR_CARRIAGE_RETURN:int = 13;
-        
+        private static const CHAR_SPACE:int           = 32;
+
         private var _texture:Texture;
         private var _chars:Dictionary;
         private var _name:String;
@@ -108,7 +109,8 @@ package starling.text
             _helperImage = new Image(texture);
             _type = BitmapFontType.STANDARD;
             _distanceFieldSpread = 0.0;
-            
+
+            addChar(CHAR_MISSING, new BitmapChar(CHAR_MISSING, null, 0, 0, 0));
             parseFontXml(fontXml);
         }
         
@@ -228,14 +230,14 @@ package starling.text
         public function createSprite(width:Number, height:Number, text:String,
                                      format:TextFormat, options:TextOptions=null):Sprite
         {
-            var charLocations:Vector.<CharLocation> = arrangeChars(width, height, text, format, options);
+            var charLocations:Vector.<BitmapCharLocation> = arrangeChars(width, height, text, format, options);
             var numChars:int = charLocations.length;
             var smoothing:String = this.smoothing;
             var sprite:Sprite = new Sprite();
             
             for (var i:int=0; i<numChars; ++i)
             {
-                var charLocation:CharLocation = charLocations[i];
+                var charLocation:BitmapCharLocation = charLocations[i];
                 var char:Image = charLocation.char.createImage();
                 char.x = charLocation.x;
                 char.y = charLocation.y;
@@ -245,7 +247,7 @@ package starling.text
                 sprite.addChild(char);
             }
             
-            CharLocation.rechargePool();
+            BitmapCharLocation.rechargePool();
             return sprite;
         }
         
@@ -253,14 +255,14 @@ package starling.text
         public function fillMeshBatch(meshBatch:MeshBatch, width:Number, height:Number, text:String,
                                       format:TextFormat, options:TextOptions=null):void
         {
-            var charLocations:Vector.<CharLocation> = arrangeChars(
+            var charLocations:Vector.<BitmapCharLocation> = arrangeChars(
                     width, height, text, format, options);
             var numChars:int = charLocations.length;
             _helperImage.color = format.color;
 
             for (var i:int=0; i<numChars; ++i)
             {
-                var charLocation:CharLocation = charLocations[i];
+                var charLocation:BitmapCharLocation = charLocations[i];
                 _helperImage.texture = charLocation.char.texture;
                 _helperImage.readjustSize();
                 _helperImage.x = charLocation.x;
@@ -269,7 +271,7 @@ package starling.text
                 meshBatch.addMesh(_helperImage);
             }
 
-            CharLocation.rechargePool();
+            BitmapCharLocation.rechargePool();
         }
 
         /** @inheritDoc */
@@ -294,12 +296,18 @@ package starling.text
             }
         }
         
-        /** Arranges the characters of a text inside a rectangle, adhering to the given settings. 
-         *  Returns a Vector of CharLocations. */
-        private function arrangeChars(width:Number, height:Number, text:String,
-                                      format:TextFormat, options:TextOptions):Vector.<CharLocation>
+        /** Arranges the characters of text inside a rectangle, adhering to the given settings.
+         *  Returns a Vector of BitmapCharLocations.
+         *
+         *  <p>BEWARE: This method uses an object pool for the returned vector and all
+         *  (returned and temporary) BitmapCharLocation instances. Do not save any references and
+         *  always call <code>BitmapCharLocation.rechargePool()</code> when you are done processing.
+         *  </p>
+         */
+        protected function arrangeChars(width:Number, height:Number, text:String,
+                                        format:TextFormat, options:TextOptions):Vector.<BitmapCharLocation>
         {
-            if (text == null || text.length == 0) return CharLocation.vectorFromPool();
+            if (text == null || text.length == 0) return BitmapCharLocation.vectorFromPool();
             if (options == null) options = sDefaultOptions;
 
             var kerning:Boolean = format.kerning;
@@ -311,7 +319,7 @@ package starling.text
             var wordWrap:Boolean = options.wordWrap;
 
             var finished:Boolean = false;
-            var charLocation:CharLocation;
+            var charLocation:BitmapCharLocation;
             var numChars:int;
             var containerWidth:Number;
             var containerHeight:Number;
@@ -333,7 +341,7 @@ package starling.text
                     var lastCharID:int = -1;
                     var currentX:Number = 0;
                     var currentY:Number = 0;
-                    var currentLine:Vector.<CharLocation> = CharLocation.vectorFromPool();
+                    var currentLine:Vector.<BitmapCharLocation> = BitmapCharLocation.vectorFromPool();
                     
                     numChars = text.length;
                     for (i=0; i<numChars; ++i)
@@ -346,19 +354,26 @@ package starling.text
                         {
                             lineFull = true;
                         }
-                        else if (char == null)
-                        {
-                            trace("[Starling] Font: "+ name + " missing character: " + text.charAt(i) + " id: "+ charID);
-                        }
                         else
                         {
+                            if (char == null)
+                            {
+                                trace(StringUtil.format(
+                                    "[Starling] Character '{0}' (id: {1}) not found in '{2}'",
+                                    text.charAt(i), charID, name));
+
+                                charID = CHAR_MISSING;
+                                char = getChar(CHAR_MISSING);
+                            }
+
                             if (charID == CHAR_SPACE || charID == CHAR_TAB)
                                 lastWhiteSpace = i;
                             
                             if (kerning)
                                 currentX += char.getKerning(lastCharID);
                             
-                            charLocation = CharLocation.instanceFromPool(char);
+                            charLocation = BitmapCharLocation.instanceFromPool(char);
+                            charLocation.index = i;
                             charLocation.x = currentX + char.xOffset;
                             charLocation.y = currentY + char.yOffset;
                             currentLine[currentLine.length] = charLocation; // push
@@ -413,7 +428,7 @@ package starling.text
                             
                             if (currentY + _lineHeight + leading + _size <= containerHeight)
                             {
-                                currentLine = CharLocation.vectorFromPool();
+                                currentLine = BitmapCharLocation.vectorFromPool();
                                 currentX = 0;
                                 currentY += _lineHeight + leading;
                                 lastWhiteSpace = -1;
@@ -433,7 +448,7 @@ package starling.text
                     finished = true; 
             } // while (!finished)
             
-            var finalLocations:Vector.<CharLocation> = CharLocation.vectorFromPool();
+            var finalLocations:Vector.<BitmapCharLocation> = BitmapCharLocation.vectorFromPool();
             var numLines:int = sLines.length;
             var bottom:Number = currentY + _lineHeight;
             var yOffset:int = 0;
@@ -443,13 +458,13 @@ package starling.text
             
             for (var lineID:int=0; lineID<numLines; ++lineID)
             {
-                var line:Vector.<CharLocation> = sLines[lineID];
+                var line:Vector.<BitmapCharLocation> = sLines[lineID];
                 numChars = line.length;
                 
                 if (numChars == 0) continue;
                 
                 var xOffset:int = 0;
-                var lastLocation:CharLocation = line[line.length-1];
+                var lastLocation:BitmapCharLocation = line[line.length-1];
                 var right:Number = lastLocation.x - lastLocation.char.xOffset 
                                                   + lastLocation.char.xAdvance;
                 
@@ -517,76 +532,5 @@ package starling.text
 
         /** The underlying texture that contains all the chars. */
         public function get texture():Texture { return _texture; }
-    }
-}
-
-import starling.text.BitmapChar;
-
-class CharLocation
-{
-    public var char:BitmapChar;
-    public var scale:Number;
-    public var x:Number;
-    public var y:Number;
-    
-    public function CharLocation(char:BitmapChar)
-    {
-        reset(char);
-    }
-
-    private function reset(char:BitmapChar):CharLocation
-    {
-        this.char = char;
-        return this;
-    }
-
-    // pooling
-
-    private static var sInstancePool:Vector.<CharLocation> = new <CharLocation>[];
-    private static var sVectorPool:Array = [];
-
-    private static var sInstanceLoan:Vector.<CharLocation> = new <CharLocation>[];
-    private static var sVectorLoan:Array = [];
-
-    public static function instanceFromPool(char:BitmapChar):CharLocation
-    {
-        var instance:CharLocation = sInstancePool.length > 0 ?
-            sInstancePool.pop() : new CharLocation(char);
-
-        instance.reset(char);
-        sInstanceLoan[sInstanceLoan.length] = instance;
-
-        return instance;
-    }
-
-    public static function vectorFromPool():Vector.<CharLocation>
-    {
-        var vector:Vector.<CharLocation> = sVectorPool.length > 0 ?
-            sVectorPool.pop() : new <CharLocation>[];
-
-        vector.length = 0;
-        sVectorLoan[sVectorLoan.length] = vector;
-
-        return vector;
-    }
-
-    public static function rechargePool():void
-    {
-        var instance:CharLocation;
-        var vector:Vector.<CharLocation>;
-
-        while (sInstanceLoan.length > 0)
-        {
-            instance = sInstanceLoan.pop();
-            instance.char = null;
-            sInstancePool[sInstancePool.length] = instance;
-        }
-
-        while (sVectorLoan.length > 0)
-        {
-            vector = sVectorLoan.pop();
-            vector.length = 0;
-            sVectorPool[sVectorPool.length] = vector;
-        }
     }
 }
